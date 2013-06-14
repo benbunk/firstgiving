@@ -1,0 +1,154 @@
+<?php
+
+/**
+ * @file
+ * Resources related to and for integrating with first giving.
+ */
+
+/**
+ * Implements hook_field_attach_validate().
+ *
+ * Used for the charity EIN field.
+ *
+ * @todo - Ben - Add a field configuration to determine if this field is an EIN number.
+ */
+function firstgiving_field_attach_validate($entity_type, $entity, &$errors) {
+  $error = FALSE;
+  $entity_wrapper = entity_metadata_wrapper($entity_type, $entity);
+  if (isset($entity_wrapper->field_charity)) {
+    $value = $entity_wrapper->field_charity->value();
+    // Assume we have an error unless everything goes perfect.
+    $error = TRUE;
+    if (is_numeric($value)) {
+      $ein = firstgiving_request('government_id:'.$value);
+      if (!empty($ein) && is_array($ein)) {
+        $error = !array_key_exists($value, $ein);
+      }
+    }
+  }
+
+  if ($error) {
+    return $errors['field_charity'][LANGUAGE_NONE][0] = array(
+      'error' => 'field_charity_invalid',
+      'message' => t('The charity EIN is invalid.'),
+    );
+  }
+}
+
+/**
+ * Simplifies sending requests to firsgiving's charity database api.
+ *
+ * @param $query
+ * @param int $page_size
+ *
+ * @return array
+ */
+function firstgiving_request($query, $page_size = 15) {
+  $results = array();
+  $http_url = 'http://graphapi.firstgiving.com/v1/list/organization?q=';
+  if ($query) {
+    // Get/Set the result of the http request from/to the cache.
+    $context['url'] = $http_url . urlencode($query) . '%20AND%20country:US&page_size=' . $page_size;
+    $context['headers'] = array(
+      'headers' => array(
+        'Accept' => 'application/json',
+      ),
+    );
+    $result = _firstgiving_cache_getset($query, function($cache_cid, $context) {
+      return drupal_http_request($context['url'], $context['headers']);
+    }, $context);
+  }
+
+  if (!isset($result->error)) {
+    $decoded_result = json_decode($result->data);
+    foreach ($decoded_result->payload as $key => $value) {
+      $results[$value->government_id] = $value->organization_name;
+    }
+  }
+
+  return $results;
+}
+
+/**
+ * Generic Cache get/set method.
+ *
+ * All cached entries expire at midnight to prevent keeping stale IRS data.
+ *
+ * @todo - Ben - Setup a special cache table for this data.
+ *
+ * Note - All expiration dates are set for "tomorrow" @see DateTime.
+ *  This means that if cache_set is called at 11:59pm the entry will expire 1 minute later.
+ *  Conversely if cache_set is called at 12:01 am it will expire in 23 hours.
+ *
+ * @param string $cache_id
+ *   A cache id.
+ * @param Closure $callback
+ *   An closure to use for getting the variable to be cached.
+ * @param null $context
+ *   Contextual information to pass on to the callback if it's called.
+ *
+ * @return mixed
+ *   Return the cached item.
+ *
+ * @see _gdata_cache_getset()
+ */
+function _firstgiving_cache_getset($cache_id, $callback, $context = NULL) {
+  $item = cache_get($cache_id);
+  if (!$item) {
+    $result = $callback($cache_id, $context);
+    $datetime = new DateTime('tomorrow');
+    cache_set($cache_id, $result, 'cache', $datetime->getTimestamp());
+
+    // We wrap the item in a mock cache_get object to prevent logic errors if the cached item is an object.
+    $item->data = $result;
+  }
+  // By wrapping cache_set results in a mock cache_get object we
+  // avoid any confusion on what is what here.
+  if (is_object($item) && isset($item->data)) {
+    $item = $item->data;
+  }
+  return $item;
+}
+
+/*
+ * Functionality to make field_charity an automcomplete.
+ * Note: Works but the UX is terrible because of the api search method.
+ *
+function firstgiving_menu() {
+  $items['firstgiving/charity_autocomplete_callback'] = array(
+    'page callback' => 'firstgiving_charity_autocomplete_callback',
+    'access arguments' => array('view published content'),
+    'type' => MENU_CALLBACK,
+  );
+  return $items;
+}
+
+function firstgiving_form_alter(&$form, $form_state) {
+  // Check for the general node edit form for product display.
+  if ($form['#form_id'] === 'product_display_node_form') {
+    // Check if we have the inline entity form for the product reference.
+    $product_form = isset($form['field_product']['und']['entities'][0]['form']) ? $form['field_product']['und']['entities'][0]['form'] : FALSE;
+    if ($product_form) {
+      if (isset($product_form['field_charity'])) {
+        //$form['field_product']['und']['entities'][0]['form']['field_charity']['und'][0]['value']['#autocomplete_path'] = 'firstgiving/charity_autocomplete_callback';
+      }
+    }
+  }
+}
+
+function firstgiving_charity_autocomplete_callback($string = '') {
+  $matches = array();
+  $http_url = 'http://graphapi.firstgiving.com/v1/list/organization?q=';
+  if ($string) {
+    $http_url .= 'organization_name:' . urlencode($string) . '*%20AND%20country:US&page_size=15';
+    $result = drupal_http_request($http_url, array('headers' => array('Accept' => 'application/json', 'User-Agent' => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/27.0.1453.110 Safari/537.36')));
+  }
+
+  if (!isset($result->error)) {
+    $decoded_result = json_decode($result->data);
+    foreach ($decoded_result->payload as $key => $value) {
+      $matches[$value->government_id] = $value->organization_name;
+    }
+    drupal_json_output($matches);
+  }
+}*/

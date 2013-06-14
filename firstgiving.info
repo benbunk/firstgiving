@@ -1,0 +1,5 @@
+name = First Giving Integration
+description = Dumping place for all things related to First Giving service.
+package = Services
+dependencies[] = entity
+core = 7.x

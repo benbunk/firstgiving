@@ -1,0 +1,92 @@
+<?php
+
+/**
+ * @file
+ *   Install, update, uninstall hook implentations.
+ */
+
+/**
+ * Implements hook_install().
+ */
+function firstgiving_install() {
+  // Create all the fields we are adding to our content type.
+  // http://api.drupal.org/api/function/field_create_field/7
+  foreach (_firstgiving_installed_fields() as $field) {
+    if (!field_read_field($field['field_name'], array('include_inactive' => TRUE))) {
+      field_create_field($field);
+    }
+  }
+
+  // Create all the instances for our fields.
+  // http://api.drupal.org/api/function/field_create_instance/7
+  foreach (_firstgiving_installed_instances() as $instance) {
+    field_create_instance($instance);
+  }
+}
+
+/**
+ * Implements hook_uninstall().
+ */
+function firstgiving_uninstall() {
+  // Delete fields and instances.
+  foreach (_firstgiving_installed_fields() as $field) {
+    field_delete_field($field['field_name']);
+  }
+}
+
+/**
+ * Implements hook_enable().
+ */
+//function firstgiving_enable() {}
+
+/**
+ * Implements hook_disable().
+ */
+//function firstgiving_disable() {}
+
+/**
+ * Fields Definitions.
+ *
+ * @return array
+ *   Fields configuration arrays.
+ */
+function _firstgiving_installed_fields() {
+  $t = get_t();
+  $fields = array(
+    'firstgiving_charity_ein' => array(
+      'field_name' => 'firstgiving_charity_ein',
+      'label'        => $t('Charity EIN'),
+      'cardinality'  => 1,
+      'type'         => 'text',
+      'settings'     => array(
+        'max_length'  => 16,
+      ),
+    ),
+  );
+  return $fields;
+}
+
+/**
+ * Field Instance Configurations.
+ *
+ * @return array
+ *   Field Instance configurations.
+ */
+function _firstgiving_installed_instances() {
+  $t = get_t();
+  $instances = array(
+    'firstgiving_charity_ein' => array(
+      'field_name' => 'firstgiving_charity_ein',
+      'entity_type' => 'commerce_product',
+      'bundle' => 'product',
+      'label' => $t('Charity EIN'),
+      'required' => TRUE,
+      'cardinality' => 1,
+      'widget'      => array(
+        'type'      => 'text_textfield',
+        'settings'  => array('size' => 16),
+      ),
+    ),
+  );
+  return $instances;
+}
